@@ -26,7 +26,7 @@ class MongoDBHandler:
 
     def fetch_latest_scraped_time(self, collection_name):
         collection = self.db[collection_name]
-        latest_scraped_time = collection.find_one({}, sort=[( 'scraped_time', -1 )])
+        latest_scraped_time = collection.find_one({}, sort=[( 'scraped_time', -1)])
         if latest_scraped_time:
             return latest_scraped_time['scraped_time']
         else:

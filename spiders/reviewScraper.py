@@ -16,12 +16,13 @@ class ReviewScraperSpider(scrapy.Spider):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.reviews_scraped = 0
-        self.max_reviews_to_scrape = 100
+        self.max_reviews_to_scrape = int(os.getenv('MAX_REVIEWS_TO_SCRAPE', 100))
         self.setup_mongodb()
         self.latest_scraped_time = self.mongodb_handler.fetch_latest_scraped_time('reviews')
         self.start_urls = self.mongodb_handler.fetch_start_urls('products')
         self.duplicates_found = False
         self.force_crawling = os.getenv('FORCE_CRAWLING', False)
+        self.max_retries = int(os.getenv('MAX_RETRIES', 3))
 
     def setup_mongodb(self):
         load_dotenv()
@@ -34,14 +35,11 @@ class ReviewScraperSpider(scrapy.Spider):
 
     def start_requests(self):
         # get the review_count from the product collection
-
-
         if self.latest_scraped_time and Utils.get_datetime() - self.latest_scraped_time < 5:
             self.logger.info('Latest reviews are less than a day ago. Exiting spider.')
-            print('Latest reviews are less than a day ago. Exiting spider.')
             return
         for url in self.start_urls:
-            yield scrapy.Request(url, callback=self.parse_review)
+            yield scrapy.Request(url, callback=self.parse_review, errback=self.errback_httpbin, meta={'retry_times': 0})
 
     def force_to_drop_collection(self):
         self.mongodb_handler.drop_collection('reviews')
@@ -49,17 +47,35 @@ class ReviewScraperSpider(scrapy.Spider):
         return True
 
     def parse_review(self, response):
-        try:
-            data = json.loads(response.text)
-        except json.JSONDecodeError:
-            self.logger.error('Failed to decode JSON')
-            return
+
         product_id = response.meta.get('product_id') or self.extract_product_id_from_url(response.url)
         if product_id is None:
+            self.logger.error('Product ID extraction failed')
             return
-        yield from (
-            self.process_reviews(data, product_id))
-        yield from self.handles_pagination(data, product_id)
+        try:
+            data = json.loads(response.text)
+            yield from (
+                self.process_reviews(data, product_id))
+            yield from self.handles_pagination(data, product_id)
+        except json.JSONDecodeError:
+            self.logger.error('Failed to decode JSON')
+            retry_times = response.meta.get('retry_times', 0) + 1
+            if retry_times <= self.max_retries:
+                self.logger.warning(f'Retrying {response.url} due to JSONDecodeError ({retry_times}/{self.max_retries})')
+                yield response.request.replace(dont_filter=True, meta={'retry_times': retry_times})
+            else:
+                self.logger.error(f'Failed to decode JSON after {retry_times} retries')
+
+    def errback_httpbin(self, failure):
+        request = failure.request
+        product_id = self.extract_product_id_from_url(request.url)
+        self.logger.error(f'Failed to fetch {request.url}')
+        retry_times = request.meta.get('retry_times', 0) + 1
+        if retry_times <= self.max_retries:
+            self.logger.warning(f'Retrying {request.url} due to JSONDecodeError ({retry_times}/{self.max_retries})')
+            yield request.replace(dont_filter=True, meta={'retry_times': retry_times})
+        else:
+            self.logger.error(f'Failed to decode JSON after {retry_times} retries')
 
     def extract_product_id_from_url(self, url):
         self.parts = url.split('/')
@@ -69,7 +85,6 @@ class ReviewScraperSpider(scrapy.Spider):
         except (ValueError, IndexError):
             self.logger.error('Product ID not found in the URL')
             return None
-
 
     def process_reviews(self, data, product_id):
         reviews = data.get('result', {}).get('reviews', [])
