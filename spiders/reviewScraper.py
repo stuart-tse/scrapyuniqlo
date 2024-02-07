@@ -70,6 +70,7 @@ class ReviewScraperSpider(scrapy.Spider):
             self.logger.error('Product ID not found in the URL')
             return None
 
+
     def process_reviews(self, data, product_id):
         reviews = data.get('result', {}).get('reviews', [])
         for review in reviews:
