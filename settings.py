@@ -44,15 +44,16 @@ ROBOTSTXT_OBEY = True
 
 # Enable or disable spider middlewares
 # See https://docs.scrapy.org/en/latest/topics/spider-middleware.html
-#SPIDER_MIDDLEWARES = {
-#    "uniqloReview.middlewares.UniqloreviewSpiderMiddleware": 543,
-#}
+SPIDER_MIDDLEWARES = {
+   "uniqloReview.middlewares.UniqloReviewSpiderMiddleware": 543,
+}
 
 # Enable or disable downloader middlewares
 # See https://docs.scrapy.org/en/latest/topics/downloader-middleware.html
-#DOWNLOADER_MIDDLEWARES = {
-#    "uniqloReview.middlewares.UniqloreviewDownloaderMiddleware": 543,
-#}
+DOWNLOADER_MIDDLEWARES = {
+    "uniqloReview.middlewares.UniqloReviewDownloaderMiddleware": 543,
+    "uniqloReview.middlewares.CheckDuplicatesMiddleware":  542,
+}
 
 # Enable or disable extensions
 # See https://docs.scrapy.org/en/latest/topics/extensions.html
@@ -67,6 +68,10 @@ ITEM_PIPELINES = {
     "uniqloReview.pipelines.review_pipeline.ReviewPipeline": 300,
     "uniqloReview.pipelines.product_pipeline.ProductPipeline": 100,
 }
+
+RETRY_TIMES = 3
+RETRY_HTTP_CODES = [500, 502, 503, 504, 522, 524, 408]
+STOP_ON_DUPLICATE = True
 
 # Enable and configure the AutoThrottle extension (disabled by default)
 # See https://docs.scrapy.org/en/latest/topics/autothrottle.html

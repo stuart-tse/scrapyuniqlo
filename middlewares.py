@@ -4,12 +4,15 @@
 # https://docs.scrapy.org/en/latest/topics/spider-middleware.html
 
 from scrapy import signals
+import logging
+from scrapy.exceptions import IgnoreRequest, NotConfigured
+from scrapy.http import Response
 
 # useful for handling different item types with a single interface
 from itemadapter import is_item, ItemAdapter
 
 
-class UniqloreviewSpiderMiddleware:
+class UniqloReviewSpiderMiddleware:
     # Not all methods need to be defined. If a method is not defined,
     # scrapy acts as if the spider middleware does not modify the
     # passed objects.
@@ -54,9 +57,35 @@ class UniqloreviewSpiderMiddleware:
 
     def spider_opened(self, spider):
         spider.logger.info("Spider opened: %s" % spider.name)
+        self.logger = logging.getLogger(__name__)
+
+    def process_response(self, request, response, spider):
+        if response.status in [404, 400, 500]:
+            self.logger.error(f"Failed to fetch {request.url}. Status code: {response.status}")
+            raise IgnoreRequest(f'Failed to fetch {request.url}. Status code: {response.status}')
+        elif isinstance(response, Response):
+            pass
+
+        return response
+
+    def process_exception(self, request, exception, spider):
+        if isinstance(exception, IgnoreRequest):
+            self.logger.error(f"Failed to fetch {request.url}. Status code: {response.status}")
+            return None
+        else:
+            return exception
+
+class CheckDuplicatesMiddleware:
+    def __init__(self):
+        self.seen = set()
+
+    def process_request(self, request, spider):
+        if getattr(spider, 'duplicates_found', False):
+            raise IgnoreRequest("Duplicate found")
 
 
-class UniqloreviewDownloaderMiddleware:
+
+class UniqloReviewDownloaderMiddleware:
     # Not all methods need to be defined. If a method is not defined,
     # scrapy acts as if the downloader middleware does not modify the
     # passed objects.

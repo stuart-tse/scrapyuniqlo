@@ -37,6 +37,26 @@ class MongoDBHandler:
         self.db[collection_name].drop()
         return True
 
+    def fetch_product_with_review_counts(self, product_id, collection_name='products'):
+        """
+        Fetch the product with review counts from the database
+        :param collection_name: the name of the collection
+        :param product_id: the id of the product
+        :return: review count integer
+        """
+        # Fetch the product with review counts from the database and return the product review count integer
+        review_count = self.db[collection_name].find_one({'product_id': product_id}, {'review_count': 1})
+        return review_count['review_count']
+
+    def count_reviews_in_db(self, product_id, collection_name='reviews'):
+        """
+        Count the number of reviews in the database
+        :param product_id: the product id
+        :param collection_name: the name of the collection
+        :return: the number of reviews in the database
+        """
+        reviews_collection = self.db[collection_name]
+        return reviews_collection.count_documents({'product_id': product_id})
 
 
 

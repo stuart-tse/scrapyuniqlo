@@ -20,7 +20,8 @@ class ReviewScraperSpider(scrapy.Spider):
         self.setup_mongodb()
         self.latest_scraped_time = self.mongodb_handler.fetch_latest_scraped_time('reviews')
         self.start_urls = self.mongodb_handler.fetch_start_urls('products')
-        print(f"Start urls: {self.start_urls}")
+        self.duplicates_found = False
+        self.force_crawling = os.getenv('FORCE_CRAWLING', False)
 
     def setup_mongodb(self):
         load_dotenv()
@@ -32,7 +33,10 @@ class ReviewScraperSpider(scrapy.Spider):
             self.force_to_drop_collection()
 
     def start_requests(self):
-        if self.latest_scraped_time and Utils.get_datetime() - self.latest_scraped_time < 86400:
+        # get the review_count from the product collection
+
+
+        if self.latest_scraped_time and Utils.get_datetime() - self.latest_scraped_time < 5:
             self.logger.info('Latest reviews are less than a day ago. Exiting spider.')
             print('Latest reviews are less than a day ago. Exiting spider.')
             return
@@ -45,10 +49,13 @@ class ReviewScraperSpider(scrapy.Spider):
         return True
 
     def parse_review(self, response):
-        data = json.loads(response.text)
+        try:
+            data = json.loads(response.text)
+        except json.JSONDecodeError:
+            self.logger.error('Failed to decode JSON')
+            return
         product_id = response.meta.get('product_id') or self.extract_product_id_from_url(response.url)
         if product_id is None:
-            self.logger.error('Product ID is None')
             return
         yield from (
             self.process_reviews(data, product_id))
@@ -63,12 +70,11 @@ class ReviewScraperSpider(scrapy.Spider):
             self.logger.error('Product ID not found in the URL')
             return None
 
-
     def process_reviews(self, data, product_id):
         reviews = data.get('result', {}).get('reviews', [])
         for review in reviews:
-            if self.reviews_scraped >= self.max_reviews_to_scrape:
-                raise CloseSpider('Reached max reviews to scrape')
+            if self.stop_crawling() or self.reviews_scraped >= self.max_reviews_to_scrape:
+                break
             self.reviews_scraped += 1
             yield self.extract_review_data(review, product_id)
 
@@ -97,5 +103,22 @@ class ReviewScraperSpider(scrapy.Spider):
             next_page = f'https://www.uniqlo.com/jp/api/commerce/v5/ja/products/{product_id}/reviews?limit=5&offset={offset}&sort=submission_time&httpFailure=true'
             yield scrapy.Request(next_page, callback=self.parse_review, meta={'product_id': product_id})
 
+    def check_reviews_count(self, product_id ):
+        # Check if the reviews are already scraped
+        expected_review_count = self.mongodb_handler.fetch_product_with_review_counts(product_id)
+        reviews_count_in_db = self.mongodb_handler.count_reviews_in_db(product_id)
+
+        if reviews_count_in_db >= expected_review_count:
+            return True
+        else:
+            return False
+
     def close_spider(self, spider):
         self.mongodb_handler.close_client()
+
+    def stop_crawling(self):
+        if self.force_crawling:
+            return False
+        if self.check_reviews_count or self.duplicates_found:
+            return True
+
