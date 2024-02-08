@@ -4,10 +4,8 @@ import os
 from scrapy.exceptions import CloseSpider
 from dotenv import load_dotenv
 
-from ..items import ReviewItem  # Make sure this import matches your project structure
-from ..utils.utils import Utils
-from ..utils.utils import MongoDBHandler
-
+from ..items import ReviewItem
+from ..utils.utils import Utils, MongoDBHandler
 
 class ReviewScraperSpider(scrapy.Spider):
     name = "reviewSpider"
@@ -137,4 +135,5 @@ class ReviewScraperSpider(scrapy.Spider):
             return False
         if self.check_reviews_count or self.duplicates_found:
             return True
+
 
