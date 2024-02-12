@@ -33,9 +33,11 @@ class ReviewPipeline:
 
     def process_item(self, item, spider):
         # Ensure this pipeline only processes ReviewItem objects
-        if item.__class__.__name__ == 'ReviewItem' and not self.is_duplicate(item):
+        if item.__class__.__name__ == 'ReviewItem':
             item = self.translate_text(item)
             self._process_review_item(item, spider)
+        elif item.__class__.__name__ == 'ProductItem':
+            pass
         else:
             logging.warning(f"ReviewPipeline encountered an unexpected item type: {item.__class__.__name__}")
             spider.duplicates_found = True

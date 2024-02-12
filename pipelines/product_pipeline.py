@@ -16,10 +16,10 @@ class ProductPipeline:
     @classmethod
     def from_crawler(cls, crawler):
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        donenv_path = os.path.join(project_root,'uniqloReview', '.env')
+        dotenv_path = os.path.join(project_root,'uniqloReview', '.env')
 
-        if os.path.exists(donenv_path):
-            load_dotenv(donenv_path)
+        if os.path.exists(dotenv_path):
+            load_dotenv(dotenv_path)
 
         mongo_url = os.getenv('MONGO_URL')
 
@@ -41,7 +41,7 @@ class ProductPipeline:
         if item.__class__.__name__ == 'ProductItem':
             try:
                 item_dict = ItemAdapter(item).asdict()
-                self.collection.insert_one(item_dict)
+                self.update_prices(item_dict)
             except pymongo.errors.DuplicateKeyError:
                 spider.duplicates_found = True
         return item
@@ -53,7 +53,6 @@ class ProductPipeline:
         """
         product_id = item_dict.get('product_id')
         existing_product = self.collection.find_one({'product_id': product_id})
-
         if existing_product:
             self.add_new_price(existing_product, item_dict)
         else:
@@ -81,7 +80,7 @@ class ProductPipeline:
         Insert a new product into the database
         :param item_dict:
         """
-        item_dict['prices'] = self.format_price_info(item_dict['prices'])
+        item_dict['prices'] = self.format_price_info(item_dict.get('prices',[]))
         self.collection.insert_one(item_dict)
 
     def format_price_info(self, prices):
@@ -90,11 +89,11 @@ class ProductPipeline:
         :param prices: the price information, either a single price or a list of prices
         :return: formatted price information as a list of dictionaries with date and price
         """
-        if isinstance(prices, list):
-            return prices
+        current_date = Utils.get_datetime()
+        if not isinstance(prices, list):
+            formatted_prices = [{"date": current_date, "price": prices}]
         else:
-            current_date = Utils.get_datetime()
-            formatted_prices = [{"date": current_date, "price": prices}] if not isinstance(prices, list) else prices
-            return formatted_prices
+            formatted_prices = [{"date": current_date, "price": price} for price in prices]
+        return formatted_prices
 
 
