@@ -14,7 +14,7 @@ class ReviewScraperSpider(scrapy.Spider):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.reviews_scraped = 0
-        self.max_reviews_to_scrape = int(os.getenv('MAX_REVIEWS_TO_SCRAPE', 100))
+        self.max_reviews_to_scrape = int(os.getenv('MAX_REVIEWS_TO_SCRAPE', 3))
         self.setup_mongodb()
         self.latest_scraped_time = self.mongodb_handler.fetch_latest_scraped_time('reviews')
         self.start_urls = self.mongodb_handler.fetch_start_urls('products')

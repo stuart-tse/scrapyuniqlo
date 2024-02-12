@@ -3,39 +3,44 @@ import os
 import pymongo
 import pymongo.errors
 from dotenv import load_dotenv
+from itemadapter import ItemAdapter
 
-from ..client import OpenAiApiClient
+class ProductPipeline:
+    collection_name = 'products'
 
-load_dotenv()
+    def __init__(self, mongo_url, mongo_db):
+        self.mongo_url = mongo_url
+        self.mongo_db = mongo_db
 
+    @classmethod
+    def from_crawler(cls, crawler):
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        donenv_path = os.path.join(project_root, '.env')
 
-class ProductPipeline(object):
+        if os.path.exists(donenv_path):
+            load_dotenv(donenv_path)
 
-    def __init__(self):
-        # Check if all necessary environment variables are set
-        try:
-            self.open_api_key = os.getenv('OPENAI_API_KEY')
-        except Exception as e:
-            raise EnvironmentError('OPENAI_API_KEY is not set')
-        self.translation_assistant = os.getenv('TRANSLATION_ASSISTANT')
-        self.mongo_url = os.getenv('MONGO_URL')
-        if not all([self.translation_assistant, self.open_api_key, self.mongo_url]):
-            raise EnvironmentError('One or more environment variables are not set')
-        self.translator = OpenAiApiClient(self.open_api_key, self.translation_assistant)
+        mongo_url = os.getenv('MONGO_URL')
+
+        if not mongo_url:
+            raise EnvironmentError('MONGO_URL is not set')
+
+        mongo_db = os.getenv('MONGO_DB', 'uniqlo')
+        return cls(mongo_url, mongo_db)
 
     def open_spider(self, spider):
-        # Establish MongoDB connection
-        try:
-            self.client = pymongo.MongoClient(os.getenv('MONGO_URL'))
-            self.db = self.client.uniqlo  # Use 'uniqlo' as the database name
-        except pymongo.errors.ConnectionFailure as e:
-            raise ConnectionError(f'Failed to connect to MongoDB: {e}')
-        # Create or get collections
-        self.products_collection = self.db.products
+        self.client = pymongo.MongoClient(self.mongo_url)
+        self.db = self.client[self.mongo_db]
+        self.collection = self.db[self.collection_name]
 
     def close_spider(self, spider):
         self.client.close()
 
     def process_item(self, item, spider):
-        # Logic to process product items
+        if item.__class__.__name__ == 'ProductItem':
+            try:
+                item_dict = ItemAdapter(item).asdict()
+                self.collection.insert_one(item_dict)
+            except pymongo.errors.DuplicateKeyError:
+                spider.duplicates_found = True
         return item

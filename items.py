@@ -41,4 +41,8 @@ class ReviewItem(scrapy.Item):
     translated_title = scrapy.Field()
     translated_comment = scrapy.Field()
     scraped_time = scrapy.Field()
+    translated_review_title = scrapy.Field()
+    translated_review_comment = scrapy.Field()
+    translated = scrapy.Field()
+
 

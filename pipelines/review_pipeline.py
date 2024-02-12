@@ -1,9 +1,12 @@
 import logging
 import pymongo, pymongo.errors
-from scrapy.exceptions import NotConfigured, CloseSpider
+from scrapy.exceptions import NotConfigured, DropItem
 from itemadapter import ItemAdapter
 from dotenv import load_dotenv
+from ..utils.openAIClient import OpenAiApiClient
 import os
+
+
 
 class ReviewPipeline:
     def __init__(self):
@@ -20,21 +23,25 @@ class ReviewPipeline:
         self.reviews_collection = self.db.reviews
         # Ensure unique index on review_id
         self.reviews_collection.create_index([('review_id', pymongo.DESCENDING)], unique=True)
+        self.translate_client = OpenAiApiClient(
+            api_key=os.getenv('OPENAI_API_KEY'),
+            assistant_id=os.getenv('TRANSLATION_ASSISTANT')
+        )
 
     def close_spider(self, spider):
         self.client.close()
 
     def process_item(self, item, spider):
         # Ensure this pipeline only processes ReviewItem objects
-        if item.__class__.__name__ == 'ReviewItem':
+        if item.__class__.__name__ == 'ReviewItem' and not self.is_duplicate(item):
+            item = self.translate_text(item)
             self._process_review_item(item, spider)
         else:
             logging.warning(f"ReviewPipeline encountered an unexpected item type: {item.__class__.__name__}")
             spider.duplicates_found = True
-        return item
+            raise DropItem(f"Duplicate review found: {item.get('review_id')}")
 
     def _process_review_item(self, review_item, spider):
-        print(f"Processing review: {review_item.get('review_id')}")
         # Convert the item to a dict and insert into the reviews collection
         review_dict = ItemAdapter(review_item).asdict()
         try:
@@ -46,3 +53,35 @@ class ReviewPipeline:
 
     def drop_duplicates_review(self):
         pass
+
+    def combine_title_and_comments(self, item):
+        return f"{item['title']} [SEP] {item['comment']}"
+
+    def translate_text(self, item):
+        combined_text = self.combine_title_and_comments(item)
+        if item.__class__.__name__ == 'ReviewItem' and not item.get('translated', False):
+            try:
+                translated_text = self.translate_client.translate_japanese(combined_text)
+                translated_parts = translated_text.split("[SEP]")
+                if len(translated_parts) == 2:
+                    item['translated_review_title'] = translated_parts[0].strip()
+                    item['translated_review_comment'] = translated_parts[1].strip()
+                    item['translated'] = True
+            except Exception as e:
+                logging.error(f"Failed to translate review: {item.get('review_id')}, {e}")
+        return item
+
+    def is_duplicate(self, item):
+        review_id = ItemAdapter(item).get('review_id')
+        exists = self.reviews_collection.find_one({'review_id': review_id})
+        if exists:
+            return True
+        return False
+
+    def store_in_database(self, item):
+        try:
+            self.reviews_collection.insert_one(ItemAdapter(item).asdict())
+            logging.info(f"Inserted review: {item.get('review_id')}")
+        except pymongo.errors.DuplicateKeyError:
+            logging.warning(f"Duplicate review found and skipping: {item.get('review_id')}")
+            raise DropItem(f"Duplicate review found: {item.get('review_id')}")
